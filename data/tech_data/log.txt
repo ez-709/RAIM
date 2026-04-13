@@ -1,0 +1,10 @@
+RAIM — start
+download brdc: 2026-04-12 (doy 102)
+  trying: https://igs.bkg.bund.de/root_ftp/IGS/BRDC/2026/102/BRDC00IGS_R_20261020000_01D_MN.rnx.gz
+  ok: data\tech_data\brdc_2026_102.nav (12972271 bytes)
+nav file: data\tech_data\brdc_2026_102.nav
+parsed: 448 GPS ephemeris records
+satellites: 32 PRNs — [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]
+time grid: 0 — 604784 s, step 600 s, 1009 epochs
+saved: data\tech_data\eci.csv (32288 rows)
+saved: data\tech_data\ecef.csv (32288 rows)

@@ -1,0 +1,32 @@
+{
+  "observer": {
+    "longitude": 37.6176,
+    "latitude": 55.7558,
+    "altitude": 150.0,
+    "timezone_utc": 3
+  },
+
+  "download": {
+    "days_back": 2,
+    "output_dir": "rinex_data",
+    "timeout_listing": 30,
+    "timeout_file": 120
+  },
+
+  "logs": {
+    "log_file": "logs/main.txt"
+  },
+
+  "stations": [
+    {"code": "MDVJ", "name": "Mendeleevo, Russia"},
+    {"code": "GLSV", "name": "Kyiv, Ukraine"},
+    {"code": "RIGA", "name": "Riga, Latvia"},
+    {"code": "METS", "name": "Metsahovi, Finland"},
+    {"code": "LAMA", "name": "Lamkowko, Poland"},
+    {"code": "BOR1", "name": "Borowa Gora, Poland"},
+    {"code": "JOZE", "name": "Jozefoslaw, Poland"},
+    {"code": "ZECK", "name": "Zelenchukskaya, Russia"},
+    {"code": "ARTU", "name": "Arti, Russia"},
+    {"code": "POTS", "name": "Potsdam, Germany"}
+  ]
+}
