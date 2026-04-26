@@ -7,7 +7,8 @@
   },
 
   "download": {
-    "days_back": 2,
+    "mode" : false,
+    "days_back": 0,
     "output_dir": "rinex_data",
     "timeout_listing": 30,
     "timeout_file": 120

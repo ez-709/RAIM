@@ -46,6 +46,7 @@ def read_config(cd_config,
                 observer_latitude=True,
                 observer_altitude=True,
                 timezone_utc=True,
+                mode = True,
                 days_back=True,
                 output_dir=True,
                 timeout_listing=True,
@@ -62,6 +63,8 @@ def read_config(cd_config,
         out.append(config["observer"]["altitude"])
     if timezone_utc:
         out.append(config["observer"]["timezone_utc"])
+    if mode:
+        out.append(config["download"]["mode"])
     if days_back:
         out.append(config["download"]["days_back"])
     if output_dir:

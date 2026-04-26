@@ -1,32 +1,31 @@
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
 import numpy as np
-from math_model import Ephemeris, GPSSatellite, C
+from math_model import GPSSatellite, C
 
-eph = Ephemeris(
+sat = GPSSatellite(
     prn=14,
-    toc=504000.0,
     toe=504000.0,
+    toc=504000.0,
     sqrt_a=5.153494356155e+03,
-    eccentricity=4.552247002721e-03,
-    inclination=9.607443114283e-01,
-    ascending_node=7.384895693748e-01,
-    perigee=2.885975350835e+00,
-    mean_anomaly=-8.892370366347e-01,
-    mean_motion_corr=4.259106000000e-09,
-    ascending_node_rate=-7.866756253000e-09,
-    inclination_rate=1.275053100000e-10,
-    cuc=-1.117587100000e-07,
-    cus=1.188553900000e-05,
-    crc=1.480625000000e+02,
-    crs=1.125000000000e+00,
-    cic=-1.862645100000e-09,
-    cis=-1.080334200000e-07,
-    clock_bias=1.832102425396e-04,
-    clock_drift=3.410605100000e-13,
-    clock_drift_rate=0.0,
+    e=4.552247002721e-03,
+    i_0=9.607443114283e-01,
+    Omega_0=7.384895693748e-01,
+    omega=2.885975350835e+00,
+    M_0=-8.892370366347e-01,
+    dn=4.259106000000e-09,
+    Omega_dot=-7.866756253000e-09,
+    i_dot=1.275053100000e-10,
+    C_uc=-1.117587100000e-07,
+    C_us=1.188553900000e-05,
+    C_rc=1.480625000000e+02,
+    C_rs=1.125000000000e+00,
+    C_ic=-1.862645100000e-09,
+    C_is=-1.080334200000e-07,
+    alpha_0=1.832102425396e-04,
+    alpha_1=3.410605100000e-13,
+    alpha_2=0.0,
 )
 
 ref = [
@@ -40,7 +39,6 @@ ref = [
     (501000, -1.453767741057e+07, -4.457413637737e+06,  2.173961885040e+07, 1.832193446327e-04),
 ]
 
-sat = GPSSatellite(eph)
 t_tr = 24_000_000.0 / C
 
 print("IS-GPS-200 Table C-1 | PRN 14")
@@ -51,7 +49,6 @@ print()
 for t, xr, yr, zr, clk_r in ref:
     pos, vel, clk = sat.ecef(t)
     pos, _ = GPSSatellite.sagnac(pos, vel, t_tr)
-
     print(f"t = {t}")
     print(f"  x:   {pos[0]:+.6e}   ref: {xr:+.6e}   dx: {pos[0]-xr:+.4f} m")
     print(f"  y:   {pos[1]:+.6e}   ref: {yr:+.6e}   dy: {pos[1]-yr:+.4f} m")

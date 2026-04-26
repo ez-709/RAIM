@@ -1,168 +1,147 @@
 import numpy as np
-from dataclasses import dataclass
 
-MU = 3.986005e14
-OMEGA_E = 7.2921151467e-5
-C = 299792458.0
-WEEK = 604800.0
+MU        = 3.986005e14
+OMEGA_E   = 7.2921151467e-5
+C         = 299792458.0
+WEEK      = 604800.0
 HALF_WEEK = 302400.0
 
 
-@dataclass
-class Ephemeris:
-    prn: int
-    toe: float
-    toc: float
-    sqrt_a: float
-    eccentricity: float
-    inclination: float
-    ascending_node: float
-    perigee: float
-    mean_anomaly: float
-    mean_motion_corr: float
-    ascending_node_rate: float
-    inclination_rate: float
-    cuc: float
-    cus: float
-    crc: float
-    crs: float
-    cic: float
-    cis: float
-    clock_bias: float
-    clock_drift: float
-    clock_drift_rate: float
-    group_delay: float = 0.0
-    week: int = 0
-
-
 class GPSSatellite:
-    def __init__(self, eph: Ephemeris):
-        self.eph = eph
-        self.a = eph.sqrt_a ** 2
-        self.n = np.sqrt(MU / self.a ** 3) + eph.mean_motion_corr
-        self.p = self.a * (1.0 - eph.eccentricity ** 2)
+    def __init__(self, prn, toe, toc,
+                 sqrt_a, e, i_0, Omega_0, omega, M_0,
+                 dn, Omega_dot, i_dot,
+                 C_uc, C_us, C_rc, C_rs, C_ic, C_is,
+                 alpha_0, alpha_1, alpha_2,
+                 T_gd=0.0, week=0):
 
-    def _wrap(self, dt):
-        while dt > HALF_WEEK:
-            dt -= WEEK
-        while dt < -HALF_WEEK:
-            dt += WEEK
+        self.prn = prn
+        self.toe = toe
+        self.toc = toc
+        self.e         = e
+        self.i_0       = i_0
+        self.Omega_0   = Omega_0
+        self.omega     = omega
+        self.M_0       = M_0
+        self.dn        = dn
+        self.Omega_dot = Omega_dot
+        self.i_dot     = i_dot
+        self.C_uc = C_uc; self.C_us = C_us
+        self.C_rc = C_rc; self.C_rs = C_rs
+        self.C_ic = C_ic; self.C_is = C_is
+        self.alpha_0 = alpha_0
+        self.alpha_1 = alpha_1
+        self.alpha_2 = alpha_2
+        self.T_gd = T_gd
+        self.week = week
+
+        self.a = sqrt_a ** 2
+        self.n = np.sqrt(MU / self.a ** 3) + dn
+        self.p = self.a * (1.0 - e ** 2)
+
+    def wrap(self, dt):
+        if dt >  HALF_WEEK: dt -= WEEK
+        if dt < -HALF_WEEK: dt += WEEK
         return dt
 
-    def _kepler(self, M):
-        e = self.eph.eccentricity
+    def kepler(self, M):
         E = M
-        for _ in range(30):
-            E_new = M + e * np.sin(E)
+        for _ in range(50):
+            E_new = M + self.e * np.sin(E)
             if abs(E_new - E) < 1e-12:
                 break
             E = E_new
-        return E
+        return E_new
 
-    def _orbital(self, t_em):
-        eph = self.eph
-        e = eph.eccentricity
+    def orbital(self, t_em):
+        e = self.e
 
-        tk = self._wrap(t_em - eph.toe)
-        M = eph.mean_anomaly + self.n * tk
-        E = self._kepler(M)
+        t_star = self.wrap(t_em - self.toe)
 
-        sin_E = np.sin(E)
-        cos_E = np.cos(E)
-        d = 1.0 - e * cos_E
+        M = self.M_0 + self.n * t_star
 
-        sin_f = np.sqrt(1.0 - e * e) * sin_E / d
-        cos_f = (cos_E - e) / d
-        f = np.arctan2(sin_f, cos_f)
+        E      = self.kepler(M)
+        sin_E  = np.sin(E)
+        cos_E  = np.cos(E)
+        d      = 1.0 - e * cos_E
 
-        phi = f + eph.perigee
-        s2 = np.sin(2.0 * phi)
-        c2 = np.cos(2.0 * phi)
+        sin_f  = np.sqrt(1.0 - e ** 2) * sin_E / d
+        cos_f  = (cos_E - e) / d
+        f      = np.arctan2(sin_f, cos_f)
 
-        u = phi + eph.cus * s2 + eph.cuc * c2
-        r = self.a * d + eph.crs * s2 + eph.crc * c2
-        inc = eph.inclination + eph.cis * s2 + eph.cic * c2 + eph.inclination_rate * tk
+        phi      = f + self.omega
+        sin_2phi = np.sin(2.0 * phi)
+        cos_2phi = np.cos(2.0 * phi)
 
-        cos_u = np.cos(u)
-        sin_u = np.sin(u)
-        x_orb = r * cos_u
-        y_orb = r * sin_u
+        u   = phi + self.C_us * sin_2phi + self.C_uc * cos_2phi
+        r   = self.a * d + self.C_rs * sin_2phi + self.C_rc * cos_2phi
+        i_k = self.i_0 + self.C_is * sin_2phi + self.C_ic * cos_2phi + self.i_dot * t_star
 
-        sq = np.sqrt(MU / self.p)
-        vr = sq * e * sin_f
-        vt = sq * (1.0 + e * cos_f)
-        vx_orb = vr * cos_u - vt * sin_u
-        vy_orb = vr * sin_u + vt * cos_u
+        cos_u = np.cos(u); sin_u = np.sin(u)
+        x = r * cos_u
+        y = r * sin_u
 
-        return tk, sin_E, x_orb, y_orb, vx_orb, vy_orb, inc
+        sq  = np.sqrt(MU / self.p)
+        v_r = sq * e * sin_f
+        v_u = sq * (1.0 + e * cos_f)
 
-    def _clock(self, t_em, e_sin_E):
-        eph = self.eph
-        dt = self._wrap(t_em - eph.toc)
-        trend = eph.clock_bias + eph.clock_drift * dt + eph.clock_drift_rate * dt * dt
-        rel = -2.0 * np.sqrt(MU * self.a) / (C * C) * e_sin_E
-        return trend + rel - eph.group_delay
+        vx = v_r * cos_u - v_u * sin_u
+        vy = v_r * sin_u + v_u * cos_u
 
-    def eci(self, t_em):
-        tk, sin_E, x, y, vx, vy, inc = self._orbital(t_em)
-        eph = self.eph
+        return t_star, sin_E, x, y, vx, vy, i_k
 
-        omega = eph.ascending_node + eph.ascending_node_rate * tk
-
-        co = np.cos(omega)
-        so = np.sin(omega)
-        ci = np.cos(inc)
-        si = np.sin(inc)
-
-        pos = np.array([
-            x * co - y * ci * so,
-            x * so + y * ci * co,
-            y * si
-        ])
-        vel = np.array([
-            vx * co - vy * ci * so,
-            vx * so + vy * ci * co,
-            vy * si
-        ])
-
-        clk = self._clock(t_em, eph.eccentricity * sin_E)
-        return pos, vel, clk
+    def clock(self, t_em, e_sin_E):
+        dt    = self.wrap(t_em - self.toc)
+        trend = self.alpha_0 + self.alpha_1 * dt + self.alpha_2 * dt ** 2
+        T_rel = -2.0 * np.sqrt(MU * self.a) / C ** 2 * e_sin_E
+        return trend + T_rel - self.T_gd
 
     def ecef(self, t_em):
-        tk, sin_E, x, y, vx, vy, inc = self._orbital(t_em)
-        eph = self.eph
+        t_star, sin_E, x, y, vx, vy, i_k = self.orbital(t_em)
 
-        omega = (eph.ascending_node
-                 + (eph.ascending_node_rate - OMEGA_E) * tk
-                 - OMEGA_E * eph.toe)
+        Omega_k = self.Omega_0 + (self.Omega_dot - OMEGA_E) * t_star - OMEGA_E * self.toe
 
-        co = np.cos(omega)
-        so = np.sin(omega)
-        ci = np.cos(inc)
-        si = np.sin(inc)
+        cos_O = np.cos(Omega_k); sin_O = np.sin(Omega_k)
+        cos_i = np.cos(i_k);     sin_i = np.sin(i_k)
 
         pos = np.array([
-            x * co - y * ci * so,
-            x * so + y * ci * co,
-            y * si
+            x * cos_O - y * cos_i * sin_O,
+            x * sin_O + y * cos_i * cos_O,
+            y * sin_i,
         ])
         vel = np.array([
-            vx * co - vy * ci * so,
-            vx * so + vy * ci * co,
-            vy * si
+            vx * cos_O - vy * cos_i * sin_O,
+            vx * sin_O + vy * cos_i * cos_O,
+            vy * sin_i,
         ])
         vel[0] += OMEGA_E * pos[1]
         vel[1] -= OMEGA_E * pos[0]
 
-        clk = self._clock(t_em, eph.eccentricity * sin_E)
-        return pos, vel, clk
+        return pos, vel, self.clock(t_em, self.e * sin_E)
 
-    @staticmethod
+    def eci(self, t_em):
+        t_star, sin_E, x, y, vx, vy, i_k = self.orbital(t_em)
+
+        Omega_k = self.Omega_0 + self.Omega_dot * t_star
+
+        cos_O = np.cos(Omega_k); sin_O = np.sin(Omega_k)
+        cos_i = np.cos(i_k);     sin_i = np.sin(i_k)
+
+        pos = np.array([
+            x * cos_O - y * cos_i * sin_O,
+            x * sin_O + y * cos_i * cos_O,
+            y * sin_i,
+        ])
+        vel = np.array([
+            vx * cos_O - vy * cos_i * sin_O,
+            vx * sin_O + vy * cos_i * cos_O,
+            vy * sin_i,
+        ])
+
+        return pos, vel, self.clock(t_em, self.e * sin_E)
+
     def sagnac(pos, vel, t_tr):
-        a = OMEGA_E * t_tr
-        ca = np.cos(a)
-        sa = np.sin(a)
-        R = np.array([[ca, sa, 0.0], [-sa, ca, 0.0], [0.0, 0.0, 1.0]])
-        pos_out = R @ pos
-        vel_out = R @ vel if vel is not None else None
-        return pos_out, vel_out
+        a  = OMEGA_E * t_tr
+        ca = np.cos(a); sa = np.sin(a)
+        A  = np.array([[ca, sa, 0.0], [-sa, ca, 0.0], [0.0, 0.0, 1.0]])
+        return A @ pos, (A @ vel if vel is not None else None)
