@@ -1,21 +1,10 @@
 {
-  "observer": {
-    "longitude": 37.6176,
-    "latitude": 55.7558,
-    "altitude": 150.0,
-    "timezone_utc": 3
-  },
-
   "download": {
-    "mode" : false,
+    "mode": false,
     "days_back": 0,
     "output_dir": "rinex_data",
     "timeout_listing": 30,
     "timeout_file": 120
-  },
-
-  "logs": {
-    "log_file": "logs/main.txt"
   },
 
   "stations": [

@@ -1,5 +1,0 @@
-RAIM — start
-nav file: data\tech_data\brdc_2026_114.nav
-parsed: 446 ephemeris records
-satellites: 32 PRNs, 146 epochs
-saved: data\tech_data\eci.csv, data\tech_data\ecef.csv

@@ -1,13 +1,15 @@
 import sys
 import os
+import re
 import gzip
-from datetime import datetime, timedelta
-import requests
-import numpy as np
+from datetime import datetime, timezone, timedelta
 
-from parsers.rinex_parser import parse_rinex_nav
-from math_model import GPSSatellite
-from utils import write_csv, log, json_to_py, DATA_DIR
+import requests
+import hatanaka
+
+from parsers.rinex_parser import parse_rinex_nav, parse_rinex_obs, get_approx_position
+from navigation_solution import ephemeris_solution, spp, save_pvt, report_pvt
+from utils import read_config, DATA_DIR
 from plots import plot_satellites
 
 
@@ -23,10 +25,8 @@ BRDC_URLS = [
 def download_brdc(days_back=1):
     if days_back > 5:
         return None
-
-    date = datetime.utcnow() - timedelta(days=days_back)
+    date = datetime.now(timezone.utc) - timedelta(days=days_back)
     year, doy, yy = date.year, date.timetuple().tm_yday, date.year % 100
-    log(f"download brdc: {date:%Y-%m-%d} (doy {doy})")
 
     for tmpl in BRDC_URLS:
         url = tmpl.format(year=year, doy=doy, yy=yy)
@@ -37,74 +37,92 @@ def download_brdc(days_back=1):
                 out_path = os.path.join(DATA_DIR, f"brdc_{year}_{doy:03d}.nav")
                 with open(out_path, "wb") as f:
                     f.write(data)
-                log(f"  ok: {out_path} ({len(data)} bytes)")
                 return out_path
-        except Exception as e:
-            log(f"  fail {url}: {e}")
-
+        except Exception:
+            pass
     return download_brdc(days_back + 1)
 
 
-def find_existing_brdc():
-    if not os.path.isdir(DATA_DIR):
+def download_obs(stations, output_dir, days_back, t_listing, t_file):
+    if days_back > 5:
         return None
-    files = sorted(f for f in os.listdir(DATA_DIR)
-                   if f.startswith("brdc_") and f.endswith(".nav"))
-    return os.path.join(DATA_DIR, files[-1]) if files else None
+    date = datetime.now(timezone.utc) - timedelta(days=days_back)
+    year, doy = date.year, date.timetuple().tm_yday
+    base = f"https://igs.bkg.bund.de/root_ftp/IGS/obs/{year}/{doy:03d}/"
+
+    try:
+        listing = requests.get(base, timeout=t_listing).text
+    except Exception:
+        return download_obs(stations, output_dir, days_back + 1, t_listing, t_file)
+
+    for station in stations:
+        m = re.search(rf'href="({station.upper()[:4]}\w+\.(?:crx|rnx)\.gz)"',
+                      listing, re.IGNORECASE)
+        if not m:
+            continue
+        filename = m.group(1)
+        try:
+            data = requests.get(base + filename, timeout=t_file).content
+            data = gzip.decompress(data)
+            if filename.endswith(".crx.gz"):
+                data = hatanaka.decompress(data)
+        except Exception:
+            continue
+        os.makedirs(output_dir, exist_ok=True)
+        out_path = os.path.join(output_dir,
+                                re.sub(r"\.(crx|rnx)\.gz$", ".rnx", filename))
+        with open(out_path, "wb") as f:
+            f.write(data)
+        return out_path
+
+    return download_obs(stations, output_dir, days_back + 1, t_listing, t_file)
 
 
-def compute(ephemerides):
-    prns  = sorted(set(e.prn for e in ephemerides))
-    toes  = [e.toe for e in ephemerides]
-    times = np.arange(min(toes), max(toes) + 600, 600)
-    log(f"satellites: {len(prns)} PRNs, {len(times)} epochs")
-
-    header    = ["t", "prn", "x", "y", "z", "vx", "vy", "vz", "clock"]
-    eci_rows  = []
-    ecef_rows = []
-
-    for prn in prns:
-        eph_list = [e for e in ephemerides if e.prn == prn]
-        for t in times:
-            eph = min(eph_list, key=lambda e: abs(t - e.toe))
-            sat = GPSSatellite(**vars(eph))
-            pos_eci,  vel_eci,  clk = sat.eci(t)
-            pos_ecef, vel_ecef, _   = sat.ecef(t)
-            eci_rows.append([t, prn, *pos_eci, *vel_eci, clk])
-            ecef_rows.append([t, prn, *pos_ecef, *vel_ecef, clk])
-
-    eci_path  = os.path.join(DATA_DIR, "eci.csv")
-    ecef_path = os.path.join(DATA_DIR, "ecef.csv")
-    write_csv(eci_path,  header, eci_rows)
-    write_csv(ecef_path, header, ecef_rows)
-    log(f"saved: {eci_path}, {ecef_path}")
-    return ecef_path
+def find_latest(directory, prefixes=("",), suffixes=("",)):
+    if not os.path.isdir(directory):
+        return None
+    files = sorted(f for f in os.listdir(directory)
+                   if any(f.startswith(p) for p in prefixes)
+                   and any(f.endswith(s) for s in suffixes))
+    return os.path.join(directory, files[-1]) if files else None
 
 
 def main():
-    log("RAIM — start", reset=True)
     os.makedirs(DATA_DIR, exist_ok=True)
+
+    mode, days_back, output_dir, t_listing, t_file, stations = read_config(CONFIG_PATH)
 
     if len(sys.argv) >= 2:
         nav_path = sys.argv[1]
     else:
-        cfg = json_to_py(CONFIG_PATH)["download"]
-        nav_path = download_brdc(cfg["days_back"]) if cfg["mode"] else find_existing_brdc()
+        nav_path = download_brdc(days_back) if mode else \
+                   find_latest(DATA_DIR, prefixes=("brdc_",), suffixes=(".nav",))
 
     if not nav_path:
-        log("ERROR: nav file not found")
+        print("nav not found")
         return
 
-    log(f"nav file: {nav_path}")
     ephemerides = parse_rinex_nav(nav_path)
-    log(f"parsed: {len(ephemerides)} ephemeris records")
-
+    print(f"nav: {len(ephemerides)} ephemerides ({os.path.basename(nav_path)})")
     if not ephemerides:
-        log("ERROR: no valid ephemeris")
         return
 
-    ecef_path = compute(ephemerides)
-    plot_satellites(ecef_path, duration_hours=2)
+    ecef_path = ephemeris_solution(ephemerides)
+
+    obs_path = find_latest(output_dir, suffixes=(".rnx", ".txt", ".obs"))
+    if not obs_path and mode:
+        obs_path = download_obs(stations, output_dir, days_back, t_listing, t_file)
+
+    if obs_path:
+        epochs  = parse_rinex_obs(obs_path)
+        ref_xyz = get_approx_position(obs_path)
+        print(f"obs: {len(epochs)} epochs ({os.path.basename(obs_path)})")
+        if epochs:
+            solutions = spp(ephemerides, epochs)
+            save_pvt(solutions)
+            report_pvt(solutions, ref=ref_xyz)
+
+    plot_satellites(ecef_path, duration_hours=12)
 
 
 if __name__ == "__main__":
