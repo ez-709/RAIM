@@ -24,7 +24,7 @@ def tow(year, month, day, hour, minute, second):
 
 
 def values(line, offset, n=4, width=19):
-    return [parse_float(line[offset + k * width: offset + (k + 1) * width])
+    return [parse_float(line[offset + k*width: offset + (k+1)*width])
             for k in range(n)]
 
 
@@ -36,11 +36,10 @@ def find_header_end(lines):
 
 
 def get_approx_position(path):
-    """Эталонные координаты станции из шапки .obs (APPROX POSITION XYZ)."""
     with open(path, 'r') as f:
         for line in f:
             if 'APPROX POSITION XYZ' in line:
-                return [parse_float(line[k * 14:(k + 1) * 14]) for k in range(3)]
+                return [parse_float(line[k*14:(k+1)*14]) for k in range(3)]
             if 'END OF HEADER' in line:
                 break
     return None
@@ -51,10 +50,24 @@ def parse_rinex_nav(path):
         lines = f.readlines()
 
     version = 2
+    alpha, beta = [0.0]*4, [0.0]*4
+
     for line in lines:
         if 'RINEX VERSION' in line:
             version = int(float(line[:9].strip()))
+        if 'ION ALPHA' in line:                      # RINEX 2
+            alpha = [parse_float(line[2+k*12:14+k*12]) for k in range(4)]
+        if 'ION BETA' in line:                       # RINEX 2
+            beta  = [parse_float(line[2+k*12:14+k*12]) for k in range(4)]
+        if 'IONOSPHERIC CORR' in line:               # RINEX 3
+            if line[:4] == 'GPSA':
+                alpha = [parse_float(line[5+k*12:17+k*12]) for k in range(4)]
+            elif line[:4] == 'GPSB':
+                beta  = [parse_float(line[5+k*12:17+k*12]) for k in range(4)]
+        if 'END OF HEADER' in line:
             break
+
+    iono_params = {'alpha': alpha, 'beta': beta} if any(a != 0 for a in alpha) else None
 
     rec = lines[find_header_end(lines):]
     out = []
@@ -96,7 +109,7 @@ def parse_rinex_nav(path):
             i += 1
             continue
 
-        rows = [values(rec[i + k], offset) for k in range(1, 8)]
+        rows = [values(rec[i+k], offset) for k in range(1, 8)]
 
         _, Crs, dn, M0            = rows[0]
         Cuc, e, Cus, sqrt_a       = rows[1]
@@ -109,31 +122,19 @@ def parse_rinex_nav(path):
 
         if sv_health == 0:
             out.append(SimpleNamespace(
-                prn       = prn,
-                toe       = toe,
-                toc       = tow(year, month, day, hour, minute, second),
-                sqrt_a    = sqrt_a,
-                e         = e,
-                i_0       = i0,
-                Omega_0   = Omega0,
-                omega     = omega,
-                M_0       = M0,
-                dn        = dn,
-                Omega_dot = Omega_dot,
-                i_dot     = i_dot,
-                C_uc      = Cuc, C_us = Cus,
-                C_rc      = Crc, C_rs = Crs,
-                C_ic      = Cic, C_is = Cis,
-                alpha_0   = clk[0],
-                alpha_1   = clk[1],
-                alpha_2   = clk[2],
-                T_gd      = T_gd,
-                week      = gps_week,
+                prn=prn, toe=toe,
+                toc=tow(year, month, day, hour, minute, second),
+                sqrt_a=sqrt_a, e=e, i_0=i0,
+                Omega_0=Omega0, omega=omega, M_0=M0,
+                dn=dn, Omega_dot=Omega_dot, i_dot=i_dot,
+                C_uc=Cuc, C_us=Cus, C_rc=Crc, C_rs=Crs, C_ic=Cic, C_is=Cis,
+                alpha_0=clk[0], alpha_1=clk[1], alpha_2=clk[2],
+                T_gd=T_gd, week=gps_week,
             ))
 
         i += 8
 
-    return out
+    return out, iono_params
 
 
 def parse_rinex_obs(path):
@@ -145,10 +146,10 @@ def parse_rinex_obs(path):
     while i < len(lines):
         line = lines[i]
         if line[60:].strip() == 'SYS / # / OBS TYPES' and line[0] == 'G':
-            n     = int(line[3:6])
+            n         = int(line[3:6])
             gps_types = line[7:60].split()
             for k in range((n - 1) // 13):
-                gps_types += lines[i + 1 + k][7:60].split()
+                gps_types += lines[i+1+k][7:60].split()
             break
         if 'END OF HEADER' in line:
             break
@@ -182,22 +183,22 @@ def parse_rinex_obs(path):
 
         sats = {}
         for k in range(n_sat):
-            row = lines[i + 1 + k]
+            row = lines[i+1+k]
             if row[0] != 'G':
                 continue
             try:
                 prn = int(row[1:3])
                 off = 3 + c1_idx * 16
-                c1  = parse_float(row[off:off + 14])
+                c1  = parse_float(row[off:off+14])
                 if c1 > 0:
                     sats[prn] = c1
             except (ValueError, IndexError):
                 continue
 
         out.append(SimpleNamespace(
-            time = datetime(year, month, day, hour, minute, int(second)),
-            tow  = tow(year, month, day, hour, minute, second),
-            sats = sats,
+            time=datetime(year, month, day, hour, minute, int(second)),
+            tow=tow(year, month, day, hour, minute, second),
+            sats=sats,
         ))
         i += 1 + n_sat
 
